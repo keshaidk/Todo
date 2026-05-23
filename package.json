@@ -1,8 +1,14 @@
 {
-  "name": "react-vite-tailwind",
+  "name": "todo",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
+  "authors": [
+    {
+      "name": "Rinaku, keshaidk",
+      "email": "ton0renaomi@gmail.com, lunxart3@gmail.com"
+    }
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
