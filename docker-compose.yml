@@ -2,32 +2,37 @@ version: '3.8'
 
 services:
   backend:
-    build: 
-      context:
+    build:
+      context: .
       dockerfile: Dockerfile.backend
     container_name: todo-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - bot_token=${bot_token}
-      - urldatabase=${urldatabase}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - WEBAPP_URL=${WEBAPP_URL}
     volumes:
-      - ./todo.db:/app/todo.db
+      - todo-db:/app
     networks:
       - todo-net
+
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: todo-frontend
-    restarts: unless-stopped
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "8080:80"
     depends_on:
       - backend
     networks:
-    - todo-net
+      - todo-net
 
 networks:
   todo-net:
     driver: bridge
+
+volumes:
+  todo-db:

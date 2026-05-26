@@ -79,3 +79,6 @@ A full-stack Telegram Mini App for task management and reminders.
 ## Notes
 - To receive push notifications, the user must have started the bot (`/start`).
 - The frontend uses `localStorage` for quick demo purposes, but the code is structured to easily integrate with the provided FastAPI endpoints.
+
+# dockerfile
+docker compose up -d --build
