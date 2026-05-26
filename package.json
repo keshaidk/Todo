@@ -1,25 +1,20 @@
 {
-  "name": "todo",
+  "name": "react-vite-tailwind",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.0",
   "type": "module",
-  "authors": [
-    {
-      "name": "Rinaku, keshaidk",
-      "email": "ton0renaomi@gmail.com, lunxart3@gmail.com"
-    }
-  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "clsx": "2.1.1",
+    "clsx": "^2.1.1",
     "date-fns": "^4.3.0",
+    "lucide-react": "^1.16.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "tailwind-merge": "3.4.0"
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.17",
