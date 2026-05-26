@@ -3,13 +3,11 @@ Telegram Bot for To-Do Mini App
 Handles /start command and sends push reminders
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.error import TelegramError
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import settings
 from database import SessionLocal
@@ -19,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a welcome message with a button to open the Web App"""
+    """Отправляет приветственное сообщение с кнопкой запуска Web App"""
     if not update.message:
         return
 
@@ -43,28 +41,27 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send help message"""
+    """Отправляет сообщение со справкой"""
     if not update.message:
         return
 
     help_text = (
         "<b>Available Commands:</b>\n\n"
         "/start - Open the To-Do app\n"
-        "/help - Show this message\n"
-        "/stats - Your statistics\n\n"
+        "/help - Show this message\n\n"
         "💡 Tip: All task management happens in the app!"
     )
-
     await update.message.reply_text(help_text, parse_mode="HTML")
 
 
-async def check_reminders(app: Application):
-    """Check for due reminders and send them via the bot"""
+async def check_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """Периодическая задача для проверки и отправки напоминаний"""
+    app = context.application
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         now = datetime.now(timezone.utc)
         
-        # Find tasks with reminders due in next 5 minutes
+        # Находим невыполненные задачи, время напоминания которых пришло
         tasks = db.query(Task).filter(
             Task.reminder_date <= now,
             Task.reminder_sent == False,
@@ -75,23 +72,40 @@ async def check_reminders(app: Application):
             try:
                 message = f"🔔 <b>Reminder!</b>\n\n📝 {task.text}"
                 await app.bot.send_message(
-                    chat_id=task.user_id,
+                    chat_id=int(task.user_id), # Преобразуем в int для Telegram API
                     text=message,
                     parse_mode="HTML"
                 )
                 task.reminder_sent = True
-                logger.info(f"Reminder sent for task {task.id}")
+                logger.info(f"Reminder sent for task {task.id} to user {task.user_id}")
             except TelegramError as e:
                 logger.error(f"Failed to send reminder to {task.user_id}: {e}")
+                # Если пользователь заблокировал бота, помечаем, чтобы не пытаться бесконечно
+                if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
+                    task.reminder_sent = True
         
         db.commit()
-        db.close()
     except Exception as e:
+        db.rollback()
         logger.error(f"Error in check_reminders: {e}")
+    finally:
+        db.close()
+
+
+async def send_completion_notification(bot, user_id: str, task_text: str):
+    """Отправляет уведомление, когда задача выполнена (вызывается из API)"""
+    try:
+        await bot.send_message(
+            chat_id=int(user_id),
+            text=f'✅ Задача "<b>{task_text}</b>" выполнена!',
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"Failed to send completion notification: {e}")
 
 
 async def set_bot_commands(app: Application):
-    """Set bot commands menu"""
+    """Настройка меню команд бота"""
     commands = [
         BotCommand("start", "Open To-Do app"),
         BotCommand("help", "Show help"),
@@ -100,89 +114,30 @@ async def set_bot_commands(app: Application):
 
 
 async def post_init(app: Application):
-    """Initialize bot after creation"""
+    """Инициализация после старта бота"""
     await set_bot_commands(app)
     logger.info("Bot commands initialized")
 
 
 def create_bot() -> Application:
-    """Create and configure the bot application"""
-    if not settings.BOT_TOKEN:
-        raise ValueError("BOT_TOKEN not set in environment variables")
+    """Создание и конфигурация инстанса приложения бота"""
+    if not settings.BOT_TOKEN or settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        raise ValueError("BOT_TOKEN не установлен в файле конфигурации или .env")
     
+    # Инициализируем приложение
     app = Application.builder().token(settings.BOT_TOKEN).build()
 
-    # Add handlers
+    # Регистрируем обработчики команд
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
 
-    # Set post init callback
+    # Добавляем callback инициализации
     app.post_init = post_init
 
-    # Add job to check reminders every minute
-    app.job_queue.run_repeating(check_reminders, interval=60, first=10)
+    # Настраиваем фоновую проверку напоминаний каждые 30 секунд через встроенный job_queue
+    if app.job_queue:
+        app.job_queue.run_repeating(check_reminders, interval=30, first=10)
+    else:
+        logger.warning("JobQueue недоступен. Проверьте, установлен ли пакет python-telegram-bot[job-queue]")
 
     return app
-
-                    chat_id=user_id,
-                    text=message,
-                    parse_mode="HTML",
-                )
-                logger.info(f"Reminder sent to {user_id} for task {task_id}")
-            except Exception as e:
-                logger.error(f"Failed to send reminder to {user_id}: {e}")
-                # Don't mark as sent if failed - but avoid infinite retries
-                if "blocked" in str(e).lower() or "deactivated" in str(e).lower():
-                    mark_reminder_sent(task_id)
-                continue
-
-            mark_reminder_sent(task_id)
-    except Exception as e:
-        logger.error(f"Error checking reminders: {e}")
-
-
-async def send_completion_notification(app: Application, user_id: str, task_text: str):
-    """Send a notification when a task is completed. Called from API or webhook."""
-    try:
-        await app.bot.send_message(
-            chat_id=user_id,
-            text=f'✅ Задача "<b>{task_text}</b>" выполнена! 🎉',
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.error(f"Failed to send completion notification: {e}")
-
-
-def main():
-    """Run the bot."""
-    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        logger.error("❌ BOT_TOKEN not set! Set the BOT_TOKEN environment variable.")
-        return
-
-    # Initialize DB
-    init_db()
-
-    # Create application
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    # Register handlers
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CallbackQueryHandler(about_callback, pattern="^about$"))
-
-    # Schedule reminder checks every 30 seconds
-    scheduler.add_job(
-        check_reminders,
-        trigger=IntervalTrigger(seconds=30),
-        args=[app],
-        id="check_reminders",
-        name="Check for due reminders every 30s",
-        replace_existing=True,
-    )
-    scheduler.start()
-
-    logger.info("✅ Bot started! Press Ctrl+C to stop.")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
