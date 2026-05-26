@@ -1,53 +1,33 @@
-import sqlite3
+"""
+Database models using SQLAlchemy
+"""
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Index
+from sqlalchemy.ext.declarative import declarative_base
 
-DB_PATH = "todo.db"
-
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+Base = declarative_base()
 
 
-def init_db():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            text TEXT NOT NULL,
-            completed INTEGER DEFAULT 0,
-            reminder_date TEXT,
-            reminder_sent INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
-        )
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)
-    """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_tasks_reminder ON tasks(reminder_date, reminder_sent, completed)
-    """)
-    conn.commit()
-    conn.close()
+class Task(Base):
+    """Task model"""
+    __tablename__ = "tasks"
 
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    text = Column(String(500), nullable=False)
+    completed = Column(Boolean, default=False, index=True)
+    reminder_date = Column(DateTime, nullable=True, index=True)
+    reminder_sent = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# Pydantic models
-class TaskCreate(BaseModel):
-    user_id: str
-    text: str
-    reminder_date: Optional[str] = None
+    # Composite index for efficient reminder queries
+    __table_args__ = (
+        Index("ix_tasks_reminder", "user_id", "reminder_date", "reminder_sent", "completed"),
+    )
 
-
-class TaskEdit(BaseModel):
-    text: Optional[str] = None
-    completed: Optional[bool] = None
+    def __repr__(self):
+        return f"<Task(id={self.id}, user_id={self.user_id}, text={self.text}, completed={self.completed})>"
     reminder_date: Optional[str] = None
 
 
